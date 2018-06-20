@@ -39,7 +39,7 @@ func (l *List) Get(index int) (string, error) {
 	return l.list[len(l.list)-1-index], nil
 }
 
-func (l *List) GetRange(end int) []string {
+func (l *List) GetRange(start, end int) []string {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -55,7 +55,7 @@ func (l *List) GetRange(end int) []string {
 		end = len(l.list)
 	}
 
-	return l.list[len(l.list)-end : len(l.list)-1]
+	return l.list[len(l.list)-end : len(l.list)-1-start]
 }
 
 func (l *List) Size() int {
@@ -77,34 +77,129 @@ func main() {
 	}
 	defer termui.Close()
 
-	internalLogs := internal.GetRange(termui.TermHeight() - 2)
+	internalLogsChosen := true
+	displayIndex := 0
+
+	internalLogs := internal.GetRange(0, termui.TermHeight()-2)
 	internalDisplay := termui.NewList()
 	internalDisplay.Items = internalLogs
-	internalDisplay.ItemFgColor = termui.ColorRed
+	internalDisplay.ItemFgColor = termui.ColorGreen
 	internalDisplay.BorderLabel = "Internal dropped"
 	internalDisplay.Height = termui.TermHeight()
 	internalDisplay.Width = termui.TermWidth() / 2
 	internalDisplay.Y = 0
 
-	externalLogs := external.GetRange(termui.TermHeight() - 2)
+	externalLogs := external.GetRange(0, termui.TermHeight()-2)
 	externalDisplay := termui.NewList()
 	externalDisplay.Items = externalLogs
-	externalDisplay.ItemFgColor = termui.ColorYellow
+	externalDisplay.ItemFgColor = termui.ColorDefault
 	externalDisplay.BorderLabel = "External dropped"
 	externalDisplay.Height = termui.TermHeight()
 	externalDisplay.Width = termui.TermWidth() / 2
 	externalDisplay.Y = 0
 	externalDisplay.X = termui.TermWidth() / 2
 
-	termui.Handle("/sys/kbd/q", func(termui.Event) {
-		cmd.Process.Kill()
-		termui.StopLoop()
+	termui.Handle("/sys/kbd/", func(e termui.Event) {
+		key := e.Data.(termui.EvtKbd).KeyStr
+
+		switch key {
+		case "q":
+			{
+				cmd.Process.Kill()
+				termui.StopLoop()
+			}
+			break
+
+		case "<left>":
+			{
+				if !internalLogsChosen {
+					internalLogsChosen = true
+					internalDisplay.ItemFgColor = termui.ColorGreen
+					externalDisplay.ItemFgColor = termui.ColorDefault
+					displayIndex = 0
+					termui.Render(externalDisplay, internalDisplay)
+				}
+			}
+			break
+
+		case "<right>":
+			{
+				if internalLogsChosen {
+					internalLogsChosen = false
+					externalDisplay.ItemFgColor = termui.ColorGreen
+					internalDisplay.ItemFgColor = termui.ColorDefault
+					displayIndex = 0
+					termui.Render(externalDisplay, internalDisplay)
+				}
+			}
+			break
+
+		case "<up>":
+			{
+				displayIndex++
+				externalIndex := 0
+				if !internalLogsChosen {
+					externalIndex = displayIndex
+				}
+
+				externalDisplay.Items = external.GetRange(externalIndex, externalIndex+termui.TermHeight()-2)
+
+				internalIndex := 0
+				if internalLogsChosen {
+					internalIndex = displayIndex
+				}
+
+				internalDisplay.Items = internal.GetRange(internalIndex, internalIndex+termui.TermHeight()-2)
+
+				termui.Render(externalDisplay, internalDisplay)
+			}
+			break
+
+		case "<down>":
+			{
+				displayIndex--
+				externalIndex := 0
+				if !internalLogsChosen {
+					externalIndex = displayIndex
+				}
+
+				externalDisplay.Items = external.GetRange(externalIndex, externalIndex+termui.TermHeight()-2)
+
+				internalIndex := 0
+				if internalLogsChosen {
+					internalIndex = displayIndex
+				}
+
+				internalDisplay.Items = internal.GetRange(internalIndex, internalIndex+termui.TermHeight()-2)
+
+				termui.Render(externalDisplay, internalDisplay)
+			}
+			break
+
+		default:
+			{
+				break
+			}
+
+		}
 
 	})
 
 	termui.Handle("/timer/1s", func(e termui.Event) {
-		externalDisplay.Items = external.GetRange(termui.TermHeight() - 2)
-		internalDisplay.Items = internal.GetRange(termui.TermHeight() - 2)
+
+		externalIndex := 0
+		if !internalLogsChosen {
+			externalIndex = displayIndex
+		}
+
+		externalDisplay.Items = external.GetRange(externalIndex, externalIndex+termui.TermHeight()-2)
+
+		internalIndex := 0
+		if internalLogsChosen {
+			internalIndex = displayIndex
+		}
+
+		internalDisplay.Items = internal.GetRange(internalIndex, internalIndex+termui.TermHeight()-2)
 
 		termui.Render(internalDisplay, externalDisplay)
 	})
@@ -116,6 +211,7 @@ func main() {
 		externalDisplay.Height = e.Data.(termui.EvtWnd).Height
 		externalDisplay.Width = e.Data.(termui.EvtWnd).Width / 2
 		externalDisplay.X = termui.TermWidth() / 2
+		termui.Render(externalDisplay, internalDisplay)
 	})
 
 	termui.Loop()
